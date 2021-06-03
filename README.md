@@ -4,5 +4,5 @@
 
 Mac:
 ```
-brew install libheif
+brew install imagemagick
 ```
