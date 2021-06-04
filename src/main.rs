@@ -37,7 +37,7 @@ fn main() {
             std::fs::create_dir_all(&path);
         }
         // Check if file exists at location or in pending list
-        let file_name = format!("{}_{}_{}_{}_{}_{}.{:?}",
+        let file_name = format!("{}-{}-{}_{}:{}:{}.{:?}",
                             year, month, day, hour, minute, second,
                             Path::new(photo).extension().expect("File has extension"));
         let mut file = path.to_path_buf();
@@ -55,30 +55,87 @@ fn main() {
 
     // Confirm with user. Display a summary + get input
     let mut resp = String::new();
-    let io = std::io::stdin().read_line(&mut resp).expect("Readline works");
     let mut got_resp = false;
     while !got_resp {
-        println!("TODO - Print the info + options");
+        println!("About to move {} photos", move_list.len());
+        if audit_list.len() > 0 {
+            println!("There are {} files that need to be audited", move_list.len());
+        }
+        println!("Enter command:");
+        println!("\tmore");
+        println!("\taudit");
+        println!("\tabort");
+        println!("\tconfirm");
+        print!("(cmd): ");
+        let io = std::io::stdin().read_line(&mut resp).expect("Read line works");
         match resp.to_lowercase().as_str() {
             "more" => {
-                // List all files to move
+                println!("Listing all files to move:");
+                for file in move_list {
+                    println!("{}", file);
+                }
+            },
+            "audit" => {
+                println!("Listing all problem files:");
+                for file in audit_list {
+                    println!("{}", file);
+                }
             },
             "abort" => {
+                println!("Aborting, not moving anything.");
+                return;
             }
             "confirm" => {
+                for file in move_list {
+                    // TODO - Move all files to target area
+                }
                 got_resp = true;
             }
             _ => {
-                println!("Invalid response");
+                println!("Invalid response.");
             }
         }
     }
-    // More details (list all)
-    // abort
-    // confirm
 
-    // Move all files to new area
     // Ask to delete old files
+    got_resp = false;
+    while !got_resp {
+        println!("Delete all old files?");
+        println!("\tyes");
+        println!("\tno");
+        println!("\tlist");
+        print!("(cmd): ");
+        let io = std::io::stdin().read_line(&mut resp).expect("Read line works");
+        match resp.to_lowercase().as_str() {
+            "list" => {
+                println!("Listing all files to delete:");
+                for file in move_list {
+                    println!("{}", file);
+                }
+            },
+            "no" => {
+                println!("Not deleting files.");
+                got_resp = true;
+            }
+            "yes" => {
+                print!("Deleting files... ");
+                for file in move_list {
+                    // TODO - delete
+                }
+                println!("Done!");
+                got_resp = true;
+            }
+            _ => {
+                println!("Invalid response.");
+            }
+        }
+    }
 
-    // delete/abort
+    if audit_list.len() > 0 {
+        println!("There are {} files that need to be audited.", move_list.len());
+        println!("Listing all problem files:");
+        for file in audit_list {
+            println!("{}", file);
+        }
+    }
 }
