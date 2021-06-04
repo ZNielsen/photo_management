@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::fmt;
 
 const SOURCE_DIR: &'static str = "/Users/z/Pictures/import";
-const DEST_TOP: &'static str = "";
+const DEST_TOP: &'static str = "/Users/z/Pictures/sorted";
 
 struct MoveInfo {
     source: PathBuf,
@@ -15,19 +15,32 @@ impl fmt::Display for MoveInfo {
 }
 
 fn main() {
-    // TODO - Get how many new photos there are
-    let photo_itr = Path::new(SOURCE_DIR).read_dir().expect("SOURCE_DIR itr is valid");
-    let mut photo_itr_list = vec![photo_itr];
+    // Create master list
+    let photo_itr = std::fs::read_dir(Path::new(SOURCE_DIR)).expect("SOURCE_DIR itr is valid");
+    let mut photo_itr_list = Vec::new();
+    photo_itr_list.push(photo_itr);
+
+    // Enter all directories and get files
+    let photo_itr = std::fs::read_dir(Path::new(SOURCE_DIR)).expect("SOURCE_DIR itr is valid");
     let mut num_photos = 0;
-    for item in &photo_itr_list {
-        // If directory, append directory itr to the vector
-        // If item, count it
+    let mut num_subdir_photos = 0;
+    let mut inc_func = || num_subdir_photos += 1;
+    for item_res in photo_itr {
+        let item = item_res.expect("Item is valid");
+        let path = item.path();
+        if path.is_dir() {
+            // If directory, append directory itr to the vector
+            visit_dirs(&path, &mut inc_func, &mut photo_itr_list).expect("Subdirs to be traversed");
+        }
+        else if path.is_file() {
+            num_photos += 1;
+        }
     }
+    num_photos += num_subdir_photos;
     println!("Sorting {} photos", num_photos);
 
     let mut audit_list = Vec::new();
     let mut copy_list = Vec::new();
-    // TODO - change to vector of iters (flatten it?)
     for photo_res in photo_itr_list.into_iter().flatten() {
         let photo = photo_res.expect("Photo is valid");
         // Check exif data for photo date
@@ -52,9 +65,9 @@ fn main() {
 
         // Check if path exists, create if not
         let relative_path = format!("{}/{}/{}", year, month, day);
-        let path: PathBuf = [String::from(SOURCE_DIR), relative_path].iter().collect();
+        let path: PathBuf = [String::from(DEST_TOP), relative_path].iter().collect();
         if !path.is_dir() {
-            std::fs::create_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("Can create directory");
         }
         // Check if file exists at location or in pending list
         let file_name = format!("{}-{}-{}_{}:{}:{}.{:?}",
@@ -132,7 +145,7 @@ fn main() {
         println!("\tno");
         println!("\tlist");
         print!("(cmd): ");
-        let io = std::io::stdin().read_line(&mut resp).expect("Read line works");
+        std::io::stdin().read_line(&mut resp).expect("Read line works");
         match resp.to_lowercase().as_str() {
             "list" => {
                 println!("Listing all files to delete:");
@@ -172,4 +185,21 @@ fn main() {
             println!("{}", file);
         }
     }
+}
+
+
+fn visit_dirs(dir: &Path, cb: &mut dyn FnMut(), list: &mut Vec<std::fs::ReadDir>) -> std::io::Result<()> {
+    if dir.is_dir() {
+        list.push(std::fs::read_dir(dir).expect("Sub-dir is valid"));
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                visit_dirs(&path, cb, list)?;
+            } else {
+                cb();
+            }
+        }
+    }
+    Ok(())
 }
