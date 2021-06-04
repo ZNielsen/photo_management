@@ -15,6 +15,29 @@ impl fmt::Display for MoveInfo {
     }
 }
 
+#[derive(PartialEq)]
+enum Mode {
+    Copy,
+    Move
+}
+impl Mode {
+    fn other(&self) -> Mode {
+        match self {
+            Mode::Copy => Mode::Move,
+            Mode::Move => Mode::Copy,
+        }
+    }
+}
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Mode::Copy => write!(f, "copy"),
+            Mode::Move => write!(f, "move"),
+        }
+    }
+}
+
+
 fn main() {
     // Create master list
     let photo_itr = std::fs::read_dir(Path::new(SOURCE_DIR)).expect("SOURCE_DIR itr is valid");
@@ -92,8 +115,10 @@ fn main() {
     // Confirm with user. Display a summary + get input
     let mut resp = String::new();
     let mut got_resp = false;
+    let mut mode = Mode::Copy;
     while !got_resp {
-        println!("About to move {} photos", &copy_list.len());
+        println!("");
+        println!("About to {} {} photos", mode, &copy_list.len());
         if !audit_list.is_empty() {
             println!("There are {} files that need to be audited", &copy_list.len());
         }
@@ -102,6 +127,7 @@ fn main() {
         if !audit_list.is_empty() {
             println!("\t> audit");
         }
+        println!("\t> {}", mode.other());
         println!("\t> abort");
         println!("\t> confirm");
         get_resp(&mut resp);
@@ -121,23 +147,19 @@ fn main() {
             "abort" => {
                 println!("Aborting, not doing anything.");
                 return;
+            },
+            "move" => {
+                println!("Switching to Move mode.");
+                mode = Mode::Move;
             }
             "confirm" => {
                 for file in &copy_list {
                     std::fs::create_dir_all(&file.dest.parent().expect("file.dest has parent")).expect("Can create directory");
-                    match std::fs::copy(&file.source, &file.dest) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            println!("Error copying: {:?} -> {:?}", &file.source, &file.dest);
-                            println!("Error was: {}", e);
-                        }
+                    if mode == Mode::Copy {
+                        copy_photo(&file.source, &file.dest);
                     }
-                    match std::fs::copy(&file.source.with_extension("MOV"), &file.dest.with_extension("MOV")) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            println!("Error copying: {:?} -> {:?}", &file.source, &file.dest);
-                            println!("Error was: {}", e);
-                        }
+                    else {
+                        move_photo(&file.source, &file.dest);
                     }
                 }
                 got_resp = true;
@@ -149,47 +171,37 @@ fn main() {
     }
 
     // Ask to delete old files
-    got_resp = false;
-    while !got_resp {
-        println!("Delete all old files?");
-        println!("\t> yes");
-        println!("\t> no");
-        println!("\t> list");
-        get_resp(&mut resp);
-        match resp.to_lowercase().as_str() {
-            "list" => {
-                println!("Listing all files to delete:");
-                for file in &copy_list {
-                    println!("{}", file);
-                }
-            },
-            "no" => {
-                println!("Not deleting files.");
-                got_resp = true;
-            }
-            "yes" => {
-                print!("Deleting files... ");
-                for file in &copy_list {
-                    match std::fs::remove_file(&file.source) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            println!("Error removing: {:?}", &file.source);
-                            println!("Error was: {}", e);
-                        }
+    if mode == Mode::Copy {
+        got_resp = false;
+        while !got_resp {
+            println!("");
+            println!("Delete all old files?");
+            println!("\t> yes");
+            println!("\t> no");
+            println!("\t> list");
+            get_resp(&mut resp);
+            match resp.to_lowercase().as_str() {
+                "list" => {
+                    println!("Listing all files to delete:");
+                    for file in &copy_list {
+                        println!("{}", file);
                     }
-                    match std::fs::remove_file(&file.source.with_extension("MOV")) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            println!("Error removing: {:?}", &file.source);
-                            println!("Error was: {}", e);
-                        }
-                    }
+                },
+                "no" => {
+                    println!("Not deleting files.");
+                    got_resp = true;
                 }
-                println!("Done!");
-                got_resp = true;
-            }
-            _ => {
-                println!("Invalid response.");
+                "yes" => {
+                    print!("Deleting files... ");
+                    for file in &copy_list {
+                        remove_photo(&file.source);
+                    }
+                    println!("Done!");
+                    got_resp = true;
+                }
+                _ => {
+                    println!("Invalid response.");
+                }
             }
         }
     }
@@ -199,6 +211,59 @@ fn main() {
         println!("Listing all problem files:");
         for file in &audit_list {
             println!("{}", file);
+        }
+    }
+}
+
+fn copy_photo(from: &PathBuf, to: &PathBuf) {
+    match std::fs::copy(&from, &to) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Error copying: {:?} -> {:?}", &from, &to);
+            println!("Error was: {}", e);
+        }
+    }
+    match std::fs::copy(&from.with_extension("MOV"), &to.with_extension("MOV")) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Error copying: {:?} -> {:?}",
+                &from.with_extension("MOV"),
+                &to.with_extension("MOV"));
+            println!("Error was: {}", e);
+        }
+    }
+}
+fn move_photo(from: &PathBuf, to: &PathBuf) {
+    match std::fs::rename(&from, &to) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Error moving: {:?} -> {:?}", &from, &to);
+            println!("Error was: {}", e);
+        }
+    }
+    match std::fs::rename(&from.with_extension("MOV"), &to.with_extension("MOV")) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Error moving: {:?} -> {:?}",
+                &from.with_extension("MOV"),
+                &to.with_extension("MOV"));
+            println!("Error was: {}", e);
+        }
+    }
+}
+fn remove_photo(path: &PathBuf) {
+    match std::fs::remove_file(&path) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Error removing: {:?}", &path);
+            println!("Error was: {}", e);
+        }
+    }
+    match std::fs::remove_file(&path.with_extension("MOV")) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Error removing: {:?}", &path.with_extension("MOV"));
+            println!("Error was: {}", e);
         }
     }
 }
