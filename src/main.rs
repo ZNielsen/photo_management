@@ -1,3 +1,5 @@
+// Copyright ©️  Zach Nielsen 2021
+
 use std::path::{Path, PathBuf};
 use std::io::Write;
 use std::fmt;
