@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::io::Write;
 use std::fmt;
 
 const SOURCE_DIR: &'static str = "/Users/z/Pictures/import";
@@ -6,11 +7,11 @@ const DEST_TOP: &'static str = "/Users/z/Pictures/sorted";
 
 struct MoveInfo {
     source: PathBuf,
-    dest: String
+    dest: PathBuf
 }
 impl fmt::Display for MoveInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "s: {:?}, d: {}", self.source, self.dest)
+        write!(f, "s: {:?}, d: {:?}", self.source, self.dest)
     }
 }
 
@@ -52,7 +53,10 @@ fn main() {
                                             .output()
                                             .expect("Get EXIF data");
         let stdout = String::from(std::str::from_utf8(&output.stdout).expect("stdout is stringable"));
-        println!("output was: {}", stdout);
+        println!("output from {:?} was: {}", photo.path(), stdout);
+        if stdout.is_empty() {
+            continue;
+        }
         let date_time: Vec<&str> = stdout.split(' ').collect();
         let date: Vec<&str> = date_time[0].split(':').collect();
         let time: Vec<&str> = date_time[1].split(':').collect();
@@ -66,24 +70,22 @@ fn main() {
         // Check if path exists, create if not
         let relative_path = format!("{}/{}/{}", year, month, day);
         let path: PathBuf = [String::from(DEST_TOP), relative_path].iter().collect();
-        if !path.is_dir() {
-            std::fs::create_dir_all(&path).expect("Can create directory");
-        }
         // Check if file exists at location or in pending list
-        let file_name = format!("{}-{}-{}_{}:{}:{}.{:?}",
+        let file_name = format!("{}-{}-{}_{}.{}.{}.{}",
                             year, month, day, hour, minute, second,
-                            Path::new(&photo.path()).extension().expect("File has extension"));
+                            &photo.path().extension().expect("File has extension")
+                                .to_str().expect("Can convert OsStr to str"));
         let mut file = path.to_path_buf();
         file.push(file_name);
-        let str_file = String::from(path.to_str().expect("Path is stringable"));
-        let move_info = MoveInfo{source: photo.path(), dest: str_file};
-        if !file.exists() {
+        let file_exists = file.exists();
+        let copy_info = MoveInfo{source: photo.path(), dest: file};
+        if !file_exists {
             // Append item to list of things to move
-            copy_list.push(move_info);
+            copy_list.push(copy_info);
         }
         else {
             // Don't clobber - append to a list of photos to audit
-            audit_list.push(move_info);
+            audit_list.push(copy_info);
         }
     }
 
@@ -96,12 +98,13 @@ fn main() {
             println!("There are {} files that need to be audited", &copy_list.len());
         }
         println!("Enter command:");
-        println!("\tmore");
-        println!("\taudit");
-        println!("\tabort");
-        println!("\tconfirm");
-        print!("(cmd): ");
-        std::io::stdin().read_line(&mut resp).expect("Read line works");
+        println!("\t> more");
+        if !audit_list.is_empty() {
+            println!("\t> audit");
+        }
+        println!("\t> abort");
+        println!("\t> confirm");
+        get_resp(&mut resp);
         match resp.to_lowercase().as_str() {
             "more" => {
                 println!("Listing all files to move:");
@@ -116,15 +119,23 @@ fn main() {
                 }
             },
             "abort" => {
-                println!("Aborting, not moving anything.");
+                println!("Aborting, not doing anything.");
                 return;
             }
             "confirm" => {
                 for file in &copy_list {
+                    std::fs::create_dir_all(&file.dest.parent().expect("file.dest has parent")).expect("Can create directory");
                     match std::fs::copy(&file.source, &file.dest) {
                         Ok(_) => (),
                         Err(e) => {
-                            println!("Error copying: {:?} -> {}", &file.source, &file.dest);
+                            println!("Error copying: {:?} -> {:?}", &file.source, &file.dest);
+                            println!("Error was: {}", e);
+                        }
+                    }
+                    match std::fs::copy(&file.source.with_extension("MOV"), &file.dest.with_extension("MOV")) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            println!("Error copying: {:?} -> {:?}", &file.source, &file.dest);
                             println!("Error was: {}", e);
                         }
                     }
@@ -132,7 +143,7 @@ fn main() {
                 got_resp = true;
             }
             _ => {
-                println!("Invalid response.");
+                println!("Invalid response: {}.", resp.to_lowercase().as_str());
             }
         }
     }
@@ -141,11 +152,10 @@ fn main() {
     got_resp = false;
     while !got_resp {
         println!("Delete all old files?");
-        println!("\tyes");
-        println!("\tno");
-        println!("\tlist");
-        print!("(cmd): ");
-        std::io::stdin().read_line(&mut resp).expect("Read line works");
+        println!("\t> yes");
+        println!("\t> no");
+        println!("\t> list");
+        get_resp(&mut resp);
         match resp.to_lowercase().as_str() {
             "list" => {
                 println!("Listing all files to delete:");
@@ -160,8 +170,14 @@ fn main() {
             "yes" => {
                 print!("Deleting files... ");
                 for file in &copy_list {
-
                     match std::fs::remove_file(&file.source) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            println!("Error removing: {:?}", &file.source);
+                            println!("Error was: {}", e);
+                        }
+                    }
+                    match std::fs::remove_file(&file.source.with_extension("MOV")) {
                         Ok(_) => (),
                         Err(e) => {
                             println!("Error removing: {:?}", &file.source);
@@ -187,6 +203,13 @@ fn main() {
     }
 }
 
+fn get_resp(resp: &mut String) {
+    resp.clear();
+    print!("(cmd): ");
+    std::io::stdout().flush().expect("Can flush stdout");
+    std::io::stdin().read_line(resp).expect("Read line works");
+    resp.pop(); // Pop off newline
+}
 
 fn visit_dirs(dir: &Path, cb: &mut dyn FnMut(), list: &mut Vec<std::fs::ReadDir>) -> std::io::Result<()> {
     if dir.is_dir() {
