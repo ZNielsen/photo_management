@@ -1,22 +1,35 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::fmt;
 
 const SOURCE_DIR: &'static str = "/Users/z/Pictures/import";
 const DEST_TOP: &'static str = "";
 
+struct MoveInfo {
+    source: PathBuf,
+    dest: String
+}
+impl fmt::Display for MoveInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "s: {:?}, d: {}", self.source, self.dest)
+    }
+}
+
 fn main() {
-    // Get how many new photos there are
+    // TODO - Get how many new photos there are
     let num_photos = 69;
     println!("Sorting {} photos", num_photos);
 
     let mut audit_list = Vec::new();
-    let mut move_list = Vec::new();
-    for photo in Path::new(SOURCE_DIR) {
+    let mut copy_list = Vec::new();
+    let photo_itr = Path::new(SOURCE_DIR).read_dir().expect("Photo itr is valid");
+    for photo_res in photo_itr {
+        let photo = photo_res.expect("Photo is valid");
         // Check exif data for photo date
         // identify -format "%[EXIF:DateTime]"
         let output = std::process::Command::new("identify")
                                             .arg("-format")
                                             .arg("%[EXIF:DateTime]")
-                                            .arg(photo)
+                                            .arg(photo.path())
                                             .output()
                                             .expect("Get EXIF data");
         let stdout = String::from(std::str::from_utf8(&output.stdout).expect("stdout is stringable"));
@@ -39,17 +52,18 @@ fn main() {
         // Check if file exists at location or in pending list
         let file_name = format!("{}-{}-{}_{}:{}:{}.{:?}",
                             year, month, day, hour, minute, second,
-                            Path::new(photo).extension().expect("File has extension"));
+                            Path::new(&photo.path()).extension().expect("File has extension"));
         let mut file = path.to_path_buf();
         file.push(file_name);
         let str_file = String::from(path.to_str().expect("Path is stringable"));
+        let move_info = MoveInfo{source: photo.path(), dest: str_file};
         if !file.exists() {
             // Append item to list of things to move
-            move_list.push(str_file);
+            copy_list.push(move_info);
         }
         else {
             // Don't clobber + append to a list of photos to audit
-            audit_list.push(str_file);
+            audit_list.push(move_info);
         }
     }
 
@@ -57,9 +71,9 @@ fn main() {
     let mut resp = String::new();
     let mut got_resp = false;
     while !got_resp {
-        println!("About to move {} photos", move_list.len());
+        println!("About to move {} photos", copy_list.len());
         if audit_list.len() > 0 {
-            println!("There are {} files that need to be audited", move_list.len());
+            println!("There are {} files that need to be audited", copy_list.len());
         }
         println!("Enter command:");
         println!("\tmore");
@@ -71,7 +85,7 @@ fn main() {
         match resp.to_lowercase().as_str() {
             "more" => {
                 println!("Listing all files to move:");
-                for file in move_list {
+                for file in copy_list {
                     println!("{}", file);
                 }
             },
@@ -86,8 +100,14 @@ fn main() {
                 return;
             }
             "confirm" => {
-                for file in move_list {
-                    // TODO - Move all files to target area
+                for file in copy_list {
+                    match std::fs::copy(file.source, file.dest) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            println!("Error copying: {:?} -> {}", file.source, file.dest);
+                            println!("Error was: {}", e);
+                        }
+                    }
                 }
                 got_resp = true;
             }
@@ -109,7 +129,7 @@ fn main() {
         match resp.to_lowercase().as_str() {
             "list" => {
                 println!("Listing all files to delete:");
-                for file in move_list {
+                for file in copy_list {
                     println!("{}", file);
                 }
             },
@@ -119,8 +139,15 @@ fn main() {
             }
             "yes" => {
                 print!("Deleting files... ");
-                for file in move_list {
-                    // TODO - delete
+                for file in copy_list {
+
+                    match std::fs::remove_file(file.source) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            println!("Error removing: {:?}", file.source);
+                            println!("Error was: {}", e);
+                        }
+                    }
                 }
                 println!("Done!");
                 got_resp = true;
@@ -132,7 +159,7 @@ fn main() {
     }
 
     if audit_list.len() > 0 {
-        println!("There are {} files that need to be audited.", move_list.len());
+        println!("There are {} files that need to be audited.", copy_list.len());
         println!("Listing all problem files:");
         for file in audit_list {
             println!("{}", file);
