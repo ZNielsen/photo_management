@@ -16,13 +16,19 @@ impl fmt::Display for MoveInfo {
 
 fn main() {
     // TODO - Get how many new photos there are
-    let num_photos = 69;
+    let photo_itr = Path::new(SOURCE_DIR).read_dir().expect("SOURCE_DIR itr is valid");
+    let mut photo_itr_list = vec![photo_itr];
+    let mut num_photos = 0;
+    for item in &photo_itr_list {
+        // If directory, append directory itr to the vector
+        // If item, count it
+    }
     println!("Sorting {} photos", num_photos);
 
     let mut audit_list = Vec::new();
     let mut copy_list = Vec::new();
-    let photo_itr = Path::new(SOURCE_DIR).read_dir().expect("Photo itr is valid");
-    for photo_res in photo_itr {
+    // TODO - change to vector of iters (flatten it?)
+    for photo_res in photo_itr_list.into_iter().flatten() {
         let photo = photo_res.expect("Photo is valid");
         // Check exif data for photo date
         // identify -format "%[EXIF:DateTime]"
@@ -45,7 +51,8 @@ fn main() {
         let second = time[2];
 
         // Check if path exists, create if not
-        let path: Path = [SOURCE_DIR, format!("{}/{}/{}", year, month, day)].iter().collect();
+        let relative_path = format!("{}/{}/{}", year, month, day);
+        let path: PathBuf = [String::from(SOURCE_DIR), relative_path].iter().collect();
         if !path.is_dir() {
             std::fs::create_dir_all(&path);
         }
@@ -62,7 +69,7 @@ fn main() {
             copy_list.push(move_info);
         }
         else {
-            // Don't clobber + append to a list of photos to audit
+            // Don't clobber - append to a list of photos to audit
             audit_list.push(move_info);
         }
     }
@@ -71,9 +78,9 @@ fn main() {
     let mut resp = String::new();
     let mut got_resp = false;
     while !got_resp {
-        println!("About to move {} photos", copy_list.len());
-        if audit_list.len() > 0 {
-            println!("There are {} files that need to be audited", copy_list.len());
+        println!("About to move {} photos", &copy_list.len());
+        if !audit_list.is_empty() {
+            println!("There are {} files that need to be audited", &copy_list.len());
         }
         println!("Enter command:");
         println!("\tmore");
@@ -81,17 +88,17 @@ fn main() {
         println!("\tabort");
         println!("\tconfirm");
         print!("(cmd): ");
-        let io = std::io::stdin().read_line(&mut resp).expect("Read line works");
+        std::io::stdin().read_line(&mut resp).expect("Read line works");
         match resp.to_lowercase().as_str() {
             "more" => {
                 println!("Listing all files to move:");
-                for file in copy_list {
+                for file in &copy_list {
                     println!("{}", file);
                 }
             },
             "audit" => {
                 println!("Listing all problem files:");
-                for file in audit_list {
+                for file in &audit_list {
                     println!("{}", file);
                 }
             },
@@ -100,11 +107,11 @@ fn main() {
                 return;
             }
             "confirm" => {
-                for file in copy_list {
-                    match std::fs::copy(file.source, file.dest) {
+                for file in &copy_list {
+                    match std::fs::copy(&file.source, &file.dest) {
                         Ok(_) => (),
                         Err(e) => {
-                            println!("Error copying: {:?} -> {}", file.source, file.dest);
+                            println!("Error copying: {:?} -> {}", &file.source, &file.dest);
                             println!("Error was: {}", e);
                         }
                     }
@@ -129,7 +136,7 @@ fn main() {
         match resp.to_lowercase().as_str() {
             "list" => {
                 println!("Listing all files to delete:");
-                for file in copy_list {
+                for file in &copy_list {
                     println!("{}", file);
                 }
             },
@@ -139,12 +146,12 @@ fn main() {
             }
             "yes" => {
                 print!("Deleting files... ");
-                for file in copy_list {
+                for file in &copy_list {
 
-                    match std::fs::remove_file(file.source) {
+                    match std::fs::remove_file(&file.source) {
                         Ok(_) => (),
                         Err(e) => {
-                            println!("Error removing: {:?}", file.source);
+                            println!("Error removing: {:?}", &file.source);
                             println!("Error was: {}", e);
                         }
                     }
@@ -161,7 +168,7 @@ fn main() {
     if audit_list.len() > 0 {
         println!("There are {} files that need to be audited.", copy_list.len());
         println!("Listing all problem files:");
-        for file in audit_list {
+        for file in &audit_list {
             println!("{}", file);
         }
     }
