@@ -2,7 +2,7 @@
 mod utils;
 
 use std::path::{Path, PathBuf};
-pub use utils::*;
+use utils::*;
 
 const SOURCE_DIR: &'static str = "/Users/z/Pictures/import";
 const DEST_TOP: &'static str = "/Users/z/Pictures/sorted";
