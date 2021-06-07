@@ -39,6 +39,22 @@ impl fmt::Display for Mode {
     }
 }
 
+#[derive(PartialEq)]
+enum PhotoOp {
+    Copy,
+    Move,
+    Remove
+}
+impl fmt::Display for PhotoOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PhotoOp::Copy => write!(f, "copy"),
+            PhotoOp::Move => write!(f, "move"),
+            PhotoOp::Remove => write!(f, "remove"),
+        }
+    }
+}
+
 
 fn main() {
     // Create master list
@@ -67,19 +83,29 @@ fn main() {
 
     let mut audit_list = Vec::new();
     let mut copy_list = Vec::new();
-    for photo_res in photo_itr_list.into_iter().flatten() {
-        let photo = photo_res.expect("Photo is valid");
+
+    let mut sorted_vec = photo_itr_list.into_iter().flatten()
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, std::io::Error>>()
+        .expect("Photos are valid and mapped");
+    sorted_vec.sort();
+    // for photo_res in sorted_vec {
+    for photo in sorted_vec {
+        // let photo = photo_res.expect("Photo is valid");
         // Check exif data for photo date
         // identify -format "%[EXIF:DateTime]"
         let output = std::process::Command::new("identify")
                                             .arg("-format")
                                             .arg("%[EXIF:DateTime]")
-                                            .arg(photo.path())
+                                            .arg(&photo)
                                             .output()
-                                            .expect("Get EXIF data");
+                                            .expect("Call to identify works");
+        // TODO - MP4, AAE
+        // AAE is a slomo sidecar file. Check for the same basename for date.
         let stdout = String::from(std::str::from_utf8(&output.stdout).expect("stdout is stringable"));
-        println!("output from {:?} was: {}", photo.path(), stdout);
+        println!("output from {:?} was: {}", &photo, stdout);
         if stdout.is_empty() {
+            println!("***** EMPTY OUTPUT, SKIPPING FILE *****");
             continue;
         }
         let date_time: Vec<&str> = stdout.split(' ').collect();
@@ -98,12 +124,12 @@ fn main() {
         // Check if file exists at location or in pending list
         let file_name = format!("{}-{}-{}_{}.{}.{}.{}",
                             year, month, day, hour, minute, second,
-                            &photo.path().extension().expect("File has extension")
+                            &photo.extension().expect("File has extension")
                                 .to_str().expect("Can convert OsStr to str"));
         let mut file = path.to_path_buf();
         file.push(file_name);
         let file_exists = file.exists();
-        let copy_info = MoveInfo{source: photo.path(), dest: file};
+        let copy_info = MoveInfo{source: photo, dest: file};
         if !file_exists {
             // Append item to list of things to move
             copy_list.push(copy_info);
@@ -158,10 +184,10 @@ fn main() {
                 for file in &copy_list {
                     std::fs::create_dir_all(&file.dest.parent().expect("file.dest has parent")).expect("Can create directory");
                     if mode == Mode::Copy {
-                        copy_photo(&file.source, &file.dest);
+                        operate_on_photo(PhotoOp::Copy, &file.source, Some(&file.dest));
                     }
                     else {
-                        move_photo(&file.source, &file.dest);
+                        operate_on_photo(PhotoOp::Move, &file.source, Some(&file.dest));
                     }
                 }
                 got_resp = true;
@@ -196,7 +222,7 @@ fn main() {
                 "yes" => {
                     print!("Deleting files... ");
                     for file in &copy_list {
-                        remove_photo(&file.source);
+                        operate_on_photo(PhotoOp::Remove, &file.source, None);
                     }
                     println!("Done!");
                     got_resp = true;
@@ -217,55 +243,35 @@ fn main() {
     }
 }
 
-fn copy_photo(from: &PathBuf, to: &PathBuf) {
-    match std::fs::copy(&from, &to) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Error copying: {:?} -> {:?}", &from, &to);
-            println!("Error was: {}", e);
-        }
+fn operate_on_photo(operation: PhotoOp, source: &PathBuf, to: Option<&PathBuf>) {
+    let mut file_list = vec![source];
+    let mov_file = source.with_extension("MOV");
+    if source.extension().expect("File has extension") == "HEIC" {
+        file_list.push(&mov_file);
     }
-    match std::fs::copy(&from.with_extension("MOV"), &to.with_extension("MOV")) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Error copying: {:?} -> {:?}",
-                &from.with_extension("MOV"),
-                &to.with_extension("MOV"));
-            println!("Error was: {}", e);
-        }
-    }
-}
-fn move_photo(from: &PathBuf, to: &PathBuf) {
-    match std::fs::rename(&from, &to) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Error moving: {:?} -> {:?}", &from, &to);
-            println!("Error was: {}", e);
-        }
-    }
-    match std::fs::rename(&from.with_extension("MOV"), &to.with_extension("MOV")) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Error moving: {:?} -> {:?}",
-                &from.with_extension("MOV"),
-                &to.with_extension("MOV"));
-            println!("Error was: {}", e);
-        }
-    }
-}
-fn remove_photo(path: &PathBuf) {
-    match std::fs::remove_file(&path) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Error removing: {:?}", &path);
-            println!("Error was: {}", e);
-        }
-    }
-    match std::fs::remove_file(&path.with_extension("MOV")) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Error removing: {:?}", &path.with_extension("MOV"));
-            println!("Error was: {}", e);
+
+    for file in file_list {
+        let result = match operation {
+            PhotoOp::Copy => {
+                match std::fs::copy(&file, &to.unwrap()) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(e)
+                }
+            }
+            PhotoOp::Move => std::fs::rename(&file, &to.unwrap()),
+            PhotoOp::Remove => std::fs::remove_file(&file),
+        };
+        match result {
+            Ok(_) => (),
+            Err(e) => {
+                if let Some(opt_to) = to {
+                    println!("Error {}: {:?} -> {:?}", operation, &file, &opt_to);
+                }
+                else {
+                    println!("Error {}: {:?}", operation, &file);
+                }
+                println!("Error was: {}", e);
+            }
         }
     }
 }
