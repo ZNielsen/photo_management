@@ -121,7 +121,11 @@ pub fn get_photo_time(photo: &PathBuf) -> Option<String> {
     match get_exif_time(photo) {
         Some(out) => Some(out),
         None => {
-            match photo.extension().expect("photo has extension").to_str() {
+            let extension = match photo.extension() {
+                Some(val) => val,
+                None => return None,
+            };
+            match extension.to_str() {
                 Some("AAE") => {
                     // AAE is a slow motion sidecar file. Check the same basename for date.
                     get_base_photo_time(&photo)
