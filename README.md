@@ -1,3 +1,8 @@
+Sorts photos into a directory. Destination and file are formatted: 
+```
+[Year]/[Month]/[Day]/[Year]-[Month]-[Day]_[Hour].[Minute].[Second].[extension]
+```
+
 ## Requirements
 
 Mac:
