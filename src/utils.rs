@@ -84,38 +84,31 @@ impl fmt::Display for PhotoOp {
 }
 
 pub fn operate_on_photo(operation: PhotoOp, source: &PathBuf, to: Option<&PathBuf>) {
-    let mut file_list = vec![source];
-    let mov_file = source.with_extension("MOV");
-    if source.extension().expect("File has extension") == "HEIC" {
-        file_list.push(&mov_file);
-    }
-
-    for file in file_list {
-        let result = match operation {
-            PhotoOp::Copy => {
-                match std::fs::copy(&file, &to.unwrap()) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(e)
-                }
+    let result = match operation {
+        PhotoOp::Copy => {
+            match std::fs::copy(&source, &to.unwrap()) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e)
             }
-            PhotoOp::Move => std::fs::rename(&file, &to.unwrap()),
-            PhotoOp::Remove => std::fs::remove_file(&file),
-        };
-        match result {
-            Ok(_) => (),
-            Err(e) => {
-                if let Some(opt_to) = to {
-                    println!("Error {}: {:?} -> {:?}", operation, &file, &opt_to);
-                }
-                else {
-                    println!("Error {}: {:?}", operation, &file);
-                }
-                println!("Error was: {}", e);
+        }
+        PhotoOp::Move => std::fs::rename(&source, &to.unwrap()),
+        PhotoOp::Remove => std::fs::remove_file(&source),
+    };
+    match result {
+        Ok(_) => (),
+        Err(e) => {
+            if let Some(opt_to) = to {
+                println!("Error {}: {:?} -> {:?}", operation, &source, &opt_to);
             }
+            else {
+                println!("Error {}: {:?}", operation, &source);
+            }
+            println!("Error was: {}", e);
         }
     }
 }
 
+/// Will try to get time by proxy if this file does not have exif data
 pub fn get_photo_time(photo: &PathBuf) -> Option<String> {
     // TODO - MP4
     match get_exif_time(photo) {
@@ -126,9 +119,11 @@ pub fn get_photo_time(photo: &PathBuf) -> Option<String> {
                 None => return None,
             };
             match extension.to_str() {
-                Some("AAE") => {
-                    // AAE is a slow motion sidecar file. Check the same basename for date.
-                    get_base_photo_time(&photo)
+                Some("AAE") | Some("MOV") => {
+                    // AAE is a slow motion sidecar file.
+                    // MOV typically has a partner file with exif data, but not always.
+                    // Check the same basename for date.
+                    return get_base_photo_time(&photo)
                 }
                 Some(_) | None => {
                     println!("***** EMPTY OUTPUT, SKIPPING FILE *****");
@@ -140,14 +135,19 @@ pub fn get_photo_time(photo: &PathBuf) -> Option<String> {
 }
 
 pub fn get_base_photo_time(photo: &PathBuf) -> Option<String> {
+    let photo_basename = String::from(photo.file_stem().expect("photo has stem").to_str().unwrap());
+    let photo_ext = String::from(photo.extension().expect("photo has extension").to_str().unwrap());
     let mut match_list = Vec::new();
     let containing_dir = photo.parent().expect("photo has parent");
     for maybe_file in containing_dir.read_dir().expect("Can read dir") {
-        let file = maybe_file.expect("A valid file");
-        if file.file_name() != photo.file_name().unwrap() {
-            match_list.push(PathBuf::from(file.file_name()));
+        let file = maybe_file.expect("A valid file").path();
+        let file_basename = String::from(file.file_stem().expect("file has stem").to_str().unwrap());
+        let file_ext = String::from(file.extension().unwrap_or(&std::ffi::OsString::from(&photo_ext)).to_str().unwrap());
+        if file_basename == photo_basename && file_ext != photo_ext {
+            match_list.push(file);
         }
     };
+    println!("match_list size: {}", match_list.len());
     for file in match_list {
         match get_exif_time(&file) {
             Some(out) => return Some(out),
@@ -157,7 +157,7 @@ pub fn get_base_photo_time(photo: &PathBuf) -> Option<String> {
     None
 }
 
-/// `photo` is assumed to have exif data. Use get_photo_time for files that don't have exif data.
+/// Just gets exif data for this file. Use get_photo_time to also try getting time by proxy.
 pub fn get_exif_time(photo: &PathBuf) -> Option<String> {
     // identify -format "%[EXIF:DateTime]"
     let output = std::process::Command::new("identify")
