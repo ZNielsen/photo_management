@@ -1,4 +1,4 @@
-Sorts photos into a directory. Destination and file are formatted: 
+Sorts photos into a directory. Destination and filename are formatted: 
 ```
 [Year]/[Month]/[Day]/[Year]-[Month]-[Day]_[Hour].[Minute].[Second].[extension]
 ```
