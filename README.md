@@ -1,6 +1,3 @@
-
-Export iPhone photos using Image Capture, then use this to sort everything.
-
 ## Requirements
 
 Mac:
@@ -9,7 +6,8 @@ brew install imagemagick
 ```
 
 ## Usage
-Go into `src/main.rs` and change your source/destination, then `cargo run` to give it a whirl.
+Export iPhone photos using Image Capture. Go into `src/main.rs` and change your source/destination, 
+then `cargo run` to sort everything.
 `identify` can be extremely slow on some files, especially large videos, so be patient if running
 on a large library.
 
