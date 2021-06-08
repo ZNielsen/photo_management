@@ -40,41 +40,17 @@ fn main() {
         .collect::<Result<Vec<_>, std::io::Error>>()
         .expect("Photos are valid and mapped");
     sorted_vec.sort();
-    // for photo_res in sorted_vec {
     for photo in sorted_vec {
-        // let photo = photo_res.expect("Photo is valid");
         // Check exif data for photo date
-        // identify -format "%[EXIF:DateTime]"
-        let output = std::process::Command::new("identify")
-                                            .arg("-format")
-                                            .arg("%[EXIF:DateTime]")
-                                            .arg(&photo)
-                                            .output()
-                                            .expect("Call to identify works");
-        // TODO - MP4, AAE
-        // AAE is a slomo sidecar file. Check for the same basename for date.
-        let stdout = String::from(std::str::from_utf8(&output.stdout).expect("stdout is stringable"));
-        println!("output from {:?} was: {}", &photo, stdout);
-        if stdout.is_empty() {
-            println!("***** EMPTY OUTPUT, SKIPPING FILE *****");
-            continue;
-        }
-        let date_time: Vec<&str> = stdout.split(' ').collect();
-        let date: Vec<&str> = date_time[0].split(':').collect();
-        let time: Vec<&str> = date_time[1].split(':').collect();
-        let year = date[0];
-        let month = date[1];
-        let day = date[2];
-        let hour = time[0];
-        let minute = time[1];
-        let second = time[2];
+        let exif_time = match get_photo_time(&photo) {
+            Some(out) => ExifTime::parse(&out),
+            None => continue,
+        };
 
         // Check if path exists, create if not
-        let relative_path = format!("{}/{}/{}", year, month, day);
-        let path: PathBuf = [String::from(DEST_TOP), relative_path].iter().collect();
+        let path: PathBuf = [String::from(DEST_TOP), exif_time.relative_path()].iter().collect();
         // Check if file exists at location or in pending list
-        let file_name = format!("{}-{}-{}_{}.{}.{}.{}",
-                            year, month, day, hour, minute, second,
+        let file_name = format!("{}.{}", exif_time.file_base_name(),
                             &photo.extension().expect("File has extension")
                                 .to_str().expect("Can convert OsStr to str"));
         let mut file = path.to_path_buf();

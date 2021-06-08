@@ -13,6 +13,38 @@ impl fmt::Display for MoveInfo {
     }
 }
 
+pub struct ExifTime {
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8
+}
+impl ExifTime {
+    pub fn parse(s: &str) -> ExifTime {
+        let date_time: Vec<&str> = s.split(' ').collect();
+        let date: Vec<&str> = date_time[0].split(':').collect();
+        let time: Vec<&str> = date_time[1].split(':').collect();
+        ExifTime {
+            year: date[0].parse::<u16>().expect("Valid year"),
+            month: date[1].parse::<u8>().expect("Valid month"),
+            day: date[2].parse::<u8>().expect("Valid day"),
+            hour: time[0].parse::<u8>().expect("Valid hour"),
+            minute: time[1].parse::<u8>().expect("Valid minute"),
+            second: time[2].parse::<u8>().expect("Valid second"),
+        }
+    }
+    pub fn file_base_name(&self) -> String {
+        format!("{}-{}-{}_{}.{}.{}",
+            self.year, self.month, self.day,
+            self.hour, self.minute, self.second)
+    }
+    pub fn relative_path(&self) -> String {
+        format!("{}/{}/{}", self.year, self.month, self.day)
+    }
+}
+
 #[derive(PartialEq)]
 pub enum Mode {
     Copy,
@@ -81,6 +113,50 @@ pub fn operate_on_photo(operation: PhotoOp, source: &PathBuf, to: Option<&PathBu
                 println!("Error was: {}", e);
             }
         }
+    }
+}
+
+pub fn get_photo_time(photo: &PathBuf) -> Option<String> {
+    // TODO - MP4
+    match get_exif_time(photo) {
+        Some(out) => Some(out),
+        None => {
+            match photo.extension().expect("photo has extension").to_str() {
+                Some("AAE") => {
+                    // AAE is a slow motion sidecar file. Check the same basename for date.
+                    get_base_photo_time(&photo)
+                }
+                Some(_) | None => {
+                    println!("***** EMPTY OUTPUT, SKIPPING FILE *****");
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+pub fn get_base_photo_time(photo: &PathBuf) -> Option<String> {
+    let basename = photo.file_stem().expect("file_stem exists")
+                        .to_str().expect("Can convert OsStr to str");
+    get_exif_time(format!("{}.HEIC", basename))
+}
+
+/// `photo` is assumed to have exif data. Use get_photo_time for files that don't have exif data.
+pub fn get_exif_time(photo: &PathBuf) -> Option<String> {
+    // identify -format "%[EXIF:DateTime]"
+    let output = std::process::Command::new("identify")
+                                        .arg("-format")
+                                        .arg("%[EXIF:DateTime]")
+                                        .arg(&photo)
+                                        .output()
+                                        .expect("Call to identify works");
+    let stdout = String::from(std::str::from_utf8(&output.stdout).expect("stdout is stringable"));
+    println!("output from {:?} was: {}", &photo, stdout);
+    if stdout.is_empty() {
+        None
+    }
+    else {
+        Some(stdout)
     }
 }
 
