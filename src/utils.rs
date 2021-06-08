@@ -136,9 +136,21 @@ pub fn get_photo_time(photo: &PathBuf) -> Option<String> {
 }
 
 pub fn get_base_photo_time(photo: &PathBuf) -> Option<String> {
-    let basename = photo.file_stem().expect("file_stem exists")
-                        .to_str().expect("Can convert OsStr to str");
-    get_exif_time(format!("{}.HEIC", basename))
+    let mut match_list = Vec::new();
+    let containing_dir = photo.parent().expect("photo has parent");
+    for maybe_file in containing_dir.read_dir().expect("Can read dir") {
+        let file = maybe_file.expect("A valid file");
+        if file.file_name() != photo.file_name().unwrap() {
+            match_list.push(PathBuf::from(file.file_name()));
+        }
+    };
+    for file in match_list {
+        match get_exif_time(&file) {
+            Some(out) => return Some(out),
+            None => (),
+        }
+    }
+    None
 }
 
 /// `photo` is assumed to have exif data. Use get_photo_time for files that don't have exif data.
