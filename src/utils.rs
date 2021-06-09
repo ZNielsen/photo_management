@@ -159,15 +159,25 @@ pub fn get_base_photo_time(photo: &PathBuf) -> Option<String> {
 
 /// Just gets exif data for this file. Use get_photo_time to also try getting time by proxy.
 pub fn get_exif_time(photo: &PathBuf) -> Option<String> {
-    // identify -format "%[EXIF:DateTime]"
+    static mut COUNTER: u64 = 0;
+    let tmp_dir = String::from("/tmp/magick");
+    std::fs::create_dir_all(&tmp_dir).expect("Can make tmp dir");
+    // MAGICK_TEMPORARY_PATH=/tmp/magick identify -format "%[EXIF:DateTime]"
     let output = std::process::Command::new("identify")
                                         .arg("-format")
                                         .arg("%[EXIF:DateTime]")
                                         .arg(&photo)
+                                        .env("MAGICK_TEMPORARY_PATH", &tmp_dir)
                                         .output()
                                         .expect("Call to identify works");
     let stdout = String::from(std::str::from_utf8(&output.stdout).expect("stdout is stringable"));
     println!("output from {:?} was: {}", &photo, stdout);
+    unsafe {
+        COUNTER += 1;
+        if COUNTER % 50 == 0 {
+            std::fs::remove_dir_all(&tmp_dir).expect("Can remove tmp_dir");
+        }
+    }
     if stdout.is_empty() {
         None
     }
