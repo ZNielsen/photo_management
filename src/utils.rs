@@ -174,7 +174,7 @@ pub fn get_exif_time(photo: &PathBuf) -> Option<String> {
     println!("output from {:?} was: {}", &photo, stdout);
     unsafe {
         COUNTER += 1;
-        if COUNTER % 50 == 0 {
+        if COUNTER % 10 == 0 {
             std::fs::remove_dir_all(&tmp_dir).expect("Can remove tmp_dir");
         }
     }
