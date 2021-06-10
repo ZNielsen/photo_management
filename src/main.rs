@@ -66,6 +66,8 @@ fn main() {
             audit_list.push(copy_info);
         }
     }
+    // ImageMagick sometimes doesn't clean up after itself
+    std::fs::remove_dir_all(&TMP_DIR).expect("Can remove tmp dir");
 
     // Confirm with user. Display a summary + get input
     let mut resp = String::new();
